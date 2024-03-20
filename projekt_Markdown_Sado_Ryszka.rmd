@@ -1,0 +1,494 @@
+---
+title: "Analiza wypadków w Polsce względem województw dla roku 2021"
+author: "Żaneta Sado, Gabriela Ryszka"
+date: "2024-01-07"
+output:
+  pdf_document:
+    toc: true
+    number_sections: true
+    fig_caption: true
+    highlight: tango
+    latex_engine: xelatex
+    keep_tex: true
+header-includes:
+  - \renewcommand{\contentsname}{Spis Treści}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Dane
+
+Dane zostały pobrane ze strony <https://stat.gov.pl>, <https://autostrady.info.pl/>. Nasze zestawienie zawiera 16 obserwacji (względem województw) i 7 zmiennych:
+
+-Wypadki-\>Wypadki ogółem
+
+-Drogi-\>Długość dróg publicznych [km]
+
+-Wykroczenia-\>Ilość kierowców zatrzymanych
+
+-Nowi_kierowcy-\>Ilość nowych kierowców
+
+-Fotoradary-\>Ilość fotoradarów
+
+-Deszcz-\>Średnia ilość dni opadów deszczu w ciągu roku
+
+-Turyści-\>Ilość turystów na 1000 ludności
+
+Wczytujemy teraz nasze dane:
+
+```{r, echo=FALSE, warning=FALSE}
+library(readxl)
+Dane<-read_excel("Wypadki.xlsx")
+colnames(Dane) <- c("wojewodztwo","wypadki","drogi","wykroczenia", "nowi_kierowcy", "fotoradary", "deszcz", "turysci")
+```
+
+```{r, echo=FALSE, warning=FALSE}
+Dane<-Dane[,c(-1)]
+pairs(Dane)
+
+```
+
+Porównując do pozostałych, widzimy, że zmienne wykroczenia i turyści mają mniejsze zagęszczenie oraz sporo wartości odstających. Podobna sytuacja jest w przypadku turystów i nowych kierowców. Reszta zmiennych jest raczej zależna od siebie losowo, chociaż w przypadku fotoradarów poza zmiennymi deszcz i turyści zbliżona jest trochę do linii.
+
+```{r,echo=FALSE, warning=FALSE}
+summary(Dane)
+```
+
+Przykładowo dla wykroczenia nasza minimalna wartość w kolumnie to 1366, a największa wartość to 8119. Mediana to 3328, a średnia 3628. Pierwszy kwantyl wynosi 2489, a trzeci kwantyl 4147.
+
+```{r,echo=FALSE, warning=FALSE}
+library(moments) 
+skewness(Dane)
+
+
+```
+
+W przypadku deszczu mamy skośność ujemną, co oznacza że ogon rozkładu jest wydłużony w lewo, co sugeruje że większość obserwacji w próbie ma wartości poniżej średniej. Dla pozostałych wartości mamy skośność dodatnią, co oznacza że ogon rozkładu jest wydłużony w prawo, co sugeruje że większość obserwacji w próbie ma wartości powyżej średniej.
+
+```{r, echo=FALSE, warning=FALSE}
+kurtosis(Dane)
+```
+
+W przypadku wszystkich zmiennych poza wypadkami kurtoza ma wartości większe od 3, zatem oznacza to leptokurtyczność czyli bardziej spiczasty rozkład w porównaniu do rozkładu normalnego. Sprójrzmy teraz na histogramy naszych zmiennych:
+
+```{r, echo=FALSE, warning=FALSE}
+par(mfrow=c(2,2))
+hist(Dane$wypadki, main="Wypadki")
+hist(Dane$drogi, main = "Drogi publiczne")
+hist(Dane$wykroczenia, main = "Wykroczenia")
+hist(Dane$nowi_kierowcy, main = "Nowi kierowcy")
+hist(Dane$fotoradary, main="Fotoradary")
+hist(Dane$deszcz, main="Deszcz")
+hist(Dane$turysci, main ="Turyści")
+```
+
+Widać że wcześniejsza analiza dla kurtozy i skośności potwierdza się na powyższych histogramach. Zobaczmy teraz, jak wygląda macierz korelacji pomiędzy zmiennymi egzogenicznymi.
+
+```{r, echo=FALSE, warning=FALSE}
+cor(Dane)
+```
+
+Korelację ujemną dostaliśmy w przypadku opadów dla wszystkich zmiennych poza drogami i fotoradarami. Poza tym, ujemna jest również dla turystów i dróg. W pozostałych przypadkach wartości korelacji są dodatnie. Najsilniejszy współczynnik korelacji jest dla zmiennych: wykroczenia, nowi_kierowcy oraz fotoradary. Na podstawie tego zmienną zależną będą wypadki.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+library(corrplot)
+corrplot(cor(Dane))
+```
+
+Widać tutaj, że najwięcej ciemnego niebieskiego jest dla zmiennej wykroczenia, nowi_kierowcy oraz fotoradary, zatem między tymi zmiennymi jest najsilniejsza korelacja. Najsłabsza korelacja jest zatem dla deszczu i turystów.
+
+```{r, echo=FALSE, warning=FALSE}
+heatmap(abs(cor(Dane)),symm=T)
+```
+
+Tutaj ponownie potwierdzają się powyższe wnioski dla siły korelacji pomiędzy rozważanymi zmiennymi.
+
+```{r, echo=FALSE, warning=FALSE}
+cor.test(Dane$wypadki, Dane$turysci,
+         method = c("pearson", "kendall", "spearman"))
+```
+
+Mamy tutaj do czynienia z korelacją między dwoma zmiennymi-wypadki i turyści. Statystyka wynosi 0.367, a p-value=0.7191 \<0.05, co oznacza, że nie mamy podstaw do odrzucenia hipotezy zerowej.(H0: Korelacja między zmiennymi wynosi 0, H1: Rzeczywista korelacja między zmiennymi nie jest równa 0). Przedział ufności zawiera 0, więc dodatkowo potwierdza że nie ma znaczącej różnicy między zmienną wypadki a turyści.
+
+```{r, echo=FALSE, warning=FALSE}
+cor.test(Dane$wypadki, Dane$deszcz,
+         method = c("pearson", "kendall", "spearman"))
+```
+
+Tutaj natomiast zbadana została korelacja pomiędzy zmiennymi: wypadki, a deszcz. Test nie wykazuje tutaj silnego związku pomiędzymi tymi zmiennymi. Nie mamy podstaw do odrzucenia hipotezy zerowej (H0: Korelacja między zmiennymi wynosi 0, H1: Rzeczywista korelacja między zmiennymi nie jest równa 0).
+
+# Model pełny-regresja liniowa
+
+Teraz dopasowany zostanie model pełny, będziemy na jego podstawie analizować czy możemy go jakoś przekształcić w celu jego ulepszenia.
+
+```{r, echo=FALSE, warning=FALSE}
+lm<-lm(formula=wypadki ~ ., data=Dane)
+lmx<-lm(formula=Dane$wypadki~Dane$turysci)
+plot(Dane$turysci, Dane$wypadki, xlab="Turyści", ylab="Wypadki")    
+abline(lmx$coefficients)
+```
+
+Linia regresji nachyla się lekko w górę, zatem wraz ze wzrostem liczby turystów rośnie liczba wypadków. Jednak punkty wokół linii regresji są rozrzucone, co może sugerować że zmienna turysci nie ma znacznego wpływu na model.
+
+```{r, echo=FALSE, warning=FALSE}
+options(scipen = 999)
+summary(lm)
+```
+
+Nasz pełny model to:
+
+Wypadki=-725,71-0,03\*drogi-0,00187\*wykroczenia+0,065\*nowi_kierowcy+15,24\*fotoradary+5,97\*deszcz+0,044\*turysci.
+
+Duża wartość p świadczy, że zmienne wykroczenia i turyści są nieistotne. Zmienność wypadków jest wyjaśniana przez nasz model w około 87%. $R^2$ poprawiony wynosi 78%. Spróbujmy zobaczyć co się stanie gdy usuniemy z naszego modelu zmienne wykroczenia i turysci.
+
+```{r, echo=FALSE, warning=FALSE}
+lm_p<-lm(formula=wypadki ~. -turysci - wykroczenia, data=Dane)
+```
+
+```{r, echo=FALSE, warning=FALSE}
+summary(lm_p)
+```
+
+Zmienność wypadków jest wyjaśniana przez nasz model w około 87%. Natomiast $R^2$ poprawiony wynosi 82%, co wskazuje znaczną poprawę.
+
+# Regresja wieloraka
+
+Wracamy teraz do analizy pełnego modelu:
+
+```{r, echo=FALSE, warning=FALSE}
+Model <- lm
+confint(Model, level=0.95)
+
+```
+
+Przedział ufności dla wykroczenia od -0,313 do 0,31 jest to jeden z wielu przedziałów które z prawdopodobieństwem 95% zawierają nieznaną wartość parametru wykroczenia.
+
+```{r, echo=FALSE, warning=FALSE}
+confint(Model, level=0.90)
+```
+
+Przedział ufności dla wykroczenia od -0,253 do 0,25 jest to jeden z wielu przedziałów które z prawdopodobieństwem 90% zawierają nieznaną wartość parametru wykroczenia.
+
+```{r, echo=FALSE, warning=FALSE}
+library(ellipse)
+```
+
+```{r, echo=FALSE, warning=FALSE}
+par(mfrow=c(1,2))
+plot(ellipse(cor(Dane$wypadki,Dane$drogi), scale=c(sd(Dane$wypadki), sd(Dane$drogi))), xlab="wypadki", ylab="drogi")
+plot(ellipse(cor(Dane$drogi,Dane$fotoradary), scale=c(sd(Dane$drogi), sd(Dane$fotoradary))), xlab="drogi", ylab="fotoradary")
+
+```
+
+Pierwsza elipsa przedstawia zależność między zmienną wypadki a drogi. Druga elipsa przedstawia zależność między drogi a fotoradary. Obie elipsy przechylone są w prawą stronę co świadczy że ich współczynnik korelacji jest dodatni. Druga elipsa jest bardziej wydłużona, co może sugerować silniejszą zależność między danymi, co za tym idzie w pierwszej elipsie mamy słabszą zależność między danymi.
+
+```{r, echo=FALSE, warning=FALSE}
+par(mfrow=c(1,2))
+plot(ellipse(Model, which = c(3,7)))
+plot(ellipse(Model, which = c(3,6)))
+
+```
+
+Obie elipsy przechylone są w lewą stronę, ale nieznacznie co świadczy że ich współczynnik korelacji jest ujemny. Jedna i druga elipsa kształtem zbliżona jest do okręgu co za tym idzie mamy słabą zależność między danymi.
+
+```{r, echo=FALSE, warning=FALSE}
+par(mfrow=c(1,2))
+plot(ellipse(Model, which = c(3,4)))
+plot(ellipse(Model, which = c(3,5)))
+```
+
+Obie elipsy przechylone są w lewą stronę, co świadczy że ich współczynnik korelacji jest ujemny. Pierwsza elipsa jest bardziej wydłużona, co może sugerować silniejszą zależność między danymi, co za tym idzie w drugiej elipsie mamy słabszą zależność między danymi.
+
+```{r, echo=FALSE, warning=FALSE,  paged.print=FALSE}
+summary(Model,corr=TRUE)$corr
+```
+
+Mamy tutaj korelację między danymi egzogenicznymi. Najsłabsza korelacja dodatnia jest pomiędzy drogi-wykroczenia. Najsilniejsza korelacja ujemna jest pomiędzy nowi_kierowcy-wykroczenia. Najsilniejsza korelacja dodatnia jest pomiędzy deszcz-nowi_kierowcy.
+
+# Analiza reszt pełnego modelu
+
+```{r, echo=FALSE, warning=FALSE,paged.print=FALSE}
+par(mfrow=c(2,2))
+plot(Dane$drogi,residuals(lm), main = "Reszty dla drogi")
+plot(Dane$wykroczenia,residuals(lm),  main = "Reszty dla  wykroczenia")
+plot(Dane$nowi_kierowcy,residuals(lm),  main = "Reszty dla  liczby nowi_kierowcy")
+plot(Dane$fotoradary,residuals(lm),  main = "Reszty dla  fotoradory")
+par(mfrow=c(2,2))
+plot(Dane$deszcz,residuals(lm),  main = "Reszty dla  deszcz")
+plot(Dane$turysci,residuals(lm),  main = "Reszty dla  turysci")
+```
+
+Dla prawie wszystkich wykresów reszty wydają się być rozmieszczone w sposób losowy, chociaż dla zmiennej deszcz i turysci skupiają się bardziej w jednym miejscu. Wykres reszt dla naszego pełnego modelu wygląda następująco:
+
+```{r,echo=FALSE, warning=FALSE}
+plot(Model$residuals)
+abline(h=0,col="red")
+
+```
+
+```{r,echo=FALSE, warning=FALSE}
+qqnorm(Model$residuals, pch=1, frame=FALSE)
+qqline(Model$residuals, col = "darkblue", lwd=2)
+
+```
+
+```{r, echo=FALSE, warning=FALSE}
+qqnorm(rstudent(Model),ylab="Standaryzowane reszty modelu regresji")
+```
+
+Reszty oscylują wokół 0, ale mamy jedną wartość odstającą. Wskazują na to 3 powyższe wykresy.
+
+Przejdźmy teraz do testu Shapiro-Wilka w celu zbadania normalności.
+
+```{r, echo=FALSE, warning=FALSE}
+shapiro.test(Model$residuals)
+```
+
+Mamy tutaj do czynienia z testem gdzie:
+
+H0: Rozkład danych jest normalny
+
+H1: Rozkład danych nie jest normalny.
+
+p wartość jest mniejsza niż 0,05 co świadczy o tym że możemy odrzucić H0. Może to sugerować że reszty nie są zgodne z rozkładem normalnym.
+
+```{r, echo=FALSE, warning=FALSE}
+library(randtests)
+runs.test(Model$residuals) 
+```
+
+Mamy tutaj do czynienia z testem gdzie:
+
+H0: Sekwencja reszt jest przypadkowa
+
+H1: Sekwencja reszt nie jest przypadkowa.
+
+Wartośc p jest większa od 0,05 więc możemy odrzucić H0, a zatem rozkład reszt nie jest przypadkowy.
+
+W celu dokładniejszej analizy przejdźmy do analizy obserwacji odstających.
+
+```{r, echo=FALSE, warning=FALSE}
+jack <- rstudent(Model)
+par(mfrow=c(1,1))
+plot(jack,ylab="Jacknife Residuals",main="Jacknife Residuals")
+abline(h=0,col="red")
+
+```
+
+Wykres reszt pokazuje jak każda obserwacja wpływa na model po jej usunięciu. Reszty są rozproszone wokół 0, ale jest kilka obserwacji odstających. Obserwacja[5] ma zatem istotny wpływ na model.
+
+```{r, echo=FALSE, warning=FALSE}
+jack[abs(jack)==max(abs(jack))] 
+```
+
+Obserwacja która ma największy bezwzględny wpływ na model to obserwacja[5]. Jej duża wartość sugeruje, że ma duży wpływ na wynik modelu.
+
+```{r, echo=FALSE, warning=FALSE}
+qt(0.05/(dim(Dane)[1]*2),(dim(Dane)[1]-10-1))
+```
+
+Wartość rozkładu t-Studenta dla przedziału ufności 95% ma wartość -5,32 co sugeruje, że wartość t-statystyki jest bardzo mała i znacznie oddalona od zera. Może to wskazywać na znaczącą różnicę między szacowanym współczynnikiem a zerem.
+
+```{r, echo=FALSE, warning=FALSE}
+(-abs(jack[abs(jack)==max(abs(jack))])<qt(0.05/(dim(Dane)[1]*2),(dim(Dane)[1]-10-1)))
+```
+
+Sprawdzamy czy wartość bezwzględna obserwacji odstających jest mniejsza niż lewostrony kwantyl t-rozkładu. Wyszedł nam fałsz, zatem wartość bezwględna obserwacji jest większa niż lewostronny kwantyl t-rozkładu. Więc nasza obserwacja nie jest istotna statystycznie na danym poziomie istnotności.
+
+Przejdźmy teraz do obserwacji wpływowych:
+
+```{r, echo=FALSE, warning=FALSE}
+cook <- cooks.distance(Model)
+plot(cook,ylab="Cooks distances")
+```
+
+Widać, że dla obserwacji 7 oraz 12 odpowiadające im wartości mają znaczący wpływ na wynik modelu.
+
+```{r, echo=FALSE, warning=FALSE}
+cook 
+```
+
+Obserwacje 1,2,3,8,9,10,13,14,15 i 16 mają wartości poniżej 0,05 zatem może to sugerować ich niewielki wpływ na model. Obserwacje 4,5,6 mają umiarkowany wpływ. Natomiast obserwacje 7,11,12 mają znaczny wpływ.
+
+# Analiza regresji
+
+Budujemy teraz model zredukowany regresji ilości wypadków zbudowany na danych, gdzie obserwacje mają odległość cooka \< niż największa odleglość cooka w całym zestawie danych.
+
+```{r,echo=FALSE, warning=FALSE}
+Model_zredukowany <- lm(wypadki~.,data=Dane,subset=(cook<max(cook)))
+summary(Model_zredukowany)
+
+```
+
+W porównaniu z wyjściowym modelem wartość $R^2$ wyszło większe, wzrosło o 0,26%. Wartość $R^2$ poprawiona spadła o 0,65%. Wartość p wzrosła o 0,001762. W porównaniu do wyjściowego modelu poza zmiennymi wykroczenia i turysci kolejną nieistotną zmienną wydaje się być deszcz.
+
+# Kryterium AIC, Ra i Cp
+
+Tworzymy teraz alternatywny model regresji, eliminując obserwacje o największej odległości cooka. Chcemy znaleźć najlepszy model, w pierwszej kolejności sprawdzimy kryteria dla całego modelu i modelu po usunięciu jednej zmiennej.
+
+```{r, echo=FALSE, warning=FALSE}
+number_cook<-which(cook==max(cook))
+Model_subset_alternative <- lm(wypadki~.,data=Dane,subset=(row.names(Dane)!=number_cook))
+```
+
+```{r, echo=FALSE, warning=FALSE}
+l0<-lm(wypadki~ drogi+wykroczenia+nowi_kierowcy+fotoradary+deszcz+turysci, data=Dane)
+ldrogi<-lm(wypadki~ wykroczenia+nowi_kierowcy+fotoradary+deszcz+turysci, data=Dane)
+lwykroczenia<-lm(wypadki~ drogi+nowi_kierowcy+fotoradary+deszcz+turysci, data=Dane)
+lnowi_kierowcy<-lm(wypadki~ drogi+wykroczenia+fotoradary+deszcz+turysci, data=Dane)
+lfotoradary<-lm(wypadki~ drogi+wykroczenia+nowi_kierowcy+deszcz+turysci, data=Dane)
+ldeszcz<-lm(wypadki~ drogi+wykroczenia+nowi_kierowcy+fotoradary+turysci, data=Dane)
+lturysci<-lm(wypadki~ drogi+wykroczenia+nowi_kierowcy+fotoradary+deszcz, data=Dane)
+AIC(l0,ldrogi,lwykroczenia,lnowi_kierowcy,lfotoradary,ldeszcz,lturysci)
+```
+
+W kryterium AIC mała wartość AIC sugeruje, który model jest lepszy, czym jego wartość mniejsza tym model lepszy. Zatem w naszym przypadku najlepszy wydaje się model lwykroczenia
+
+(drogi+nowi_kierowcy+fotoradary+deszcz+turysci).
+
+```{r, echo=FALSE, warning=FALSE}
+library(faraway)
+library(leaps)
+x <- model.matrix(Model)[,-1]
+y <- Dane$wypadki
+g <- leaps(x,y,nbest=1)
+Cpplot(g)
+
+```
+
+Preferujemy model z najniższym p i $C_{p}$ , ale analizujemy model tylko bez jednej zmiennej. Zatem lepszy wydaje się model który zawiera zmienne drogi+nowi_kierowcy+fotoradary+deszcz+turysci.
+
+Sprawdźmy teraz informacje o najlepszych modelach na podstawie $R^2$.
+
+```{r, echo=FALSE, warning=FALSE}
+adjR2 <- leaps(x,y,nbest=1,method="adjr2") 
+maxadjr(adjR2, 6)
+```
+
+Zgodnie z kryterium R\^2 najlepszy model bez wykroczeń i turystów.
+
+Przejdźmy teraz do analizy reszt modelu bez wykroczeń:
+
+```{r, echo=FALSE, warning=FALSE}
+Dane1<-Dane[,c(-3)]
+
+par(mfrow=c(3,2), mar=c(5, 4, 4, 2) + 0.1)
+plot(Dane1$drogi,residuals(lm), main = "Reszty dla  dlugosci drog publicznych")
+plot(Dane1$nowi_kierowcy,residuals(lm),  main = "Reszty dla  liczby kierowcow")
+plot(Dane1$fotoradary,residuals(lm),  main = "Reszty dla  ilosci fotoradarow")
+plot(Dane1$deszcz,residuals(lm),  main = "Reszty dla  sredniej ilosci dni opadow deszczu w ciagu roku")
+plot(Dane1$turysci,residuals(lm),  main = "Reszty dla  liczby turystow na 1000 ludnosci")
+par(mfrow = c(1, 1))
+
+```
+
+Widać że reszty w modelu po usunięciu zmiennej wykroczenia układają się w mniej losowy sposób.
+
+Nasz model bez wykroczeń:
+
+```{r, echo=FALSE, warning=FALSE}
+Model1<-lm(formula=wypadki ~ ., data=Dane1)
+summary(Model1)
+```
+
+W porównaniu do wyjściowego modelu wzrosła wartość $R^2$ poprawione. Jednak dalej nieistotna wydaje się być zmienna turyści.
+
+```{r, echo=FALSE, warning=FALSE}
+qqnorm(Model1$residuals, pch=1, frame=FALSE)
+qqline(Model1$residuals, col = "darkblue", lwd=2)
+qqnorm(rstudent(Model1),ylab="Standaryzowane reszty modelu regresji")
+qqline(rstudent(Model1), col = "darkblue", lwd=2)
+```
+
+Widzimy że reszty dalej oscylują wokół prostej, ale nie usunęliśmy zmiennej odstającej.
+
+```{r, echo=FALSE, warning=FALSE}
+shapiro.test(Model1$residuals)
+```
+
+p wartość jest mniejsza niż 0,05 co świadczy o tym że możemy odrzucić H0. Może to sugerować że reszty nie są zgodne z rozkładem normalnym.
+
+Spróbujmy teraz usunąć z modelu oprócz zmiennej wykroczenia jeszcze jedną zmienną.
+
+```{r, echo=FALSE, warning=FALSE}
+ll0<-lm(wypadki~ drogi+nowi_kierowcy+fotoradary+deszcz+turysci, data=Dane1)
+lldrogi<-lm(wypadki~ nowi_kierowcy+fotoradary+deszcz+turysci, data=Dane1)
+llnowi_kierowcy<-lm(wypadki~ drogi+fotoradary+deszcz+turysci, data=Dane1)
+llfotoradary<-lm(wypadki~ drogi+nowi_kierowcy+deszcz+turysci, data=Dane1)
+lldeszcz<-lm(wypadki~ drogi+nowi_kierowcy+fotoradary+turysci, data=Dane1)
+llturysci<-lm(wypadki~ drogi+nowi_kierowcy+fotoradary+deszcz, data=Dane1)
+AIC(ll0,lldrogi,llnowi_kierowcy,llfotoradary,lldeszcz,llturysci)
+```
+
+Widzimy, że z kryterium AIC lepszy model to model llturyści zawierajacy drogi+nowi_kierowcy+fotoradary+deszcz.
+
+```{r, echo=FALSE, warning=FALSE}
+x <- model.matrix(Model1)[,-1]
+y <- Dane1$wypadki
+g <- leaps(x,y,nbest=1)
+Cpplot(g)
+```
+
+Z kryterium Cp lepszy model to model zawierający drogi+nowi_kierowcy+fotoradary+deszcz.
+
+```{r, echo=FALSE, warning=FALSE}
+adjR2 <- leaps(x,y,nbest=1,method="adjr2") 
+maxadjr(adjR2, 5)
+```
+
+Z kryterium Rp najlepszy model to model zawierający drogi+nowi_kierowcy+fotoradary+deszcz.
+
+Zatem trzy kryteria dały jednoznaczną odpowiedź i najlepszy model to model zawierający zmienne drogi+nowi_kierowcy+fotoradary+deszcz.
+
+```{r, echo=FALSE, warning=FALSE}
+Dane2<-Dane1[,c(-6)]
+
+par(mfrow=c(2,2), mar=c(5, 4, 4, 2) + 0.1)
+plot(Dane2$drogi,residuals(lm), main = "Reszty - drogi")
+plot(Dane2$nowi_kierowcy,residuals(lm),  main = "Reszty - nowi_kierowcy")
+plot(Dane2$fotoradary,residuals(lm),  main = "Reszty - fotoradary")
+plot(Dane2$deszcz,residuals(lm),  main = "Reszty - deszcz")
+par(mfrow = c(1, 1))
+```
+
+Reszty wydają się być rozmieszczone w mniej losowy sposób, co może sugerować normalność.
+
+Nasz model bez zmiennej wykroczenia i turyści:
+
+```{r, echo=FALSE, warning=FALSE}
+Model2<-lm(formula=wypadki ~ ., data=Dane2)
+summary(Model2)
+```
+
+Nasz model ma postać:
+
+Wypadki=-707,67-0.03\*drogi+0,07\*nowi_kierowcy+15,53\*fotoradary+6,04\*deszcz.
+
+```{r, echo=FALSE, warning=FALSE}
+qqnorm(Model2$residuals, pch=1, frame=FALSE)
+qqline(Model2$residuals, col = "darkblue", lwd=2)
+qqnorm(rstudent(Model2),ylab="Standaryzowane reszty modelu regresji")
+qqline(rstudent(Model2), col = "darkblue", lwd=2)
+```
+
+Podobnie nasze reszty oscylują wokół prostej i mamy jedną wartość odstającą.
+
+```{r, echo=FALSE, warning=FALSE}
+shapiro.test(Model2$residuals)
+```
+
+p wartość jest większa niż 0,05 co świadczy o tym że możemy przyjąć H0. Może to sugerować że reszty są zgodne z rozkładem normalnym.
+
+# Analiza końcowa
+
+Najlepszym modelem okazał się model:
+
+Wypadki=-707,67-0.03\*drogi+0,07\*nowi_kierowcy+15,53\*fotoradary+6,04\*deszcz.
+
+Największy wpływ na wypadki ma zmienna fotoradar oraz deszcz. Jeśli zwiększymy ilość nowych kierowców o rok, to oczekiwana ilość wypadków zwiększy się o 0,07 jednstek z zasadą cetero paribus.
+
+# Wnioski
+
+Okazało się że największy wpływ na liczbę wypadków względem województw ma ilość fotoradarów oraz średnia ilość dni opadów deszczu w ciągu roku. Jednak istotnym wpływem okazało się być również długość dróg publicznych oraz liczba nowych kierowców. Nieistotne okazły się być ilość kierowców zatrzymanych oraz ilość turystów na 1000 ludności.
